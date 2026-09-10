@@ -697,7 +697,7 @@ public class AutismLauncherOverlay extends AutismOverlayBase {
         if (!autismclient.util.AutismLiteVariant.enabled()) {
             pairWidth = Math.max(pairWidth, requiredButtonWidth("Matchmaking", UiAssets.ICON_MATCHMAKING));
             pairWidth = Math.max(pairWidth, requiredButtonWidth(
-                "Multi " + autismclient.util.multi.MultiProfile.MAX_SESSIONS, UiAssets.ICON_MULTI));
+                "Multi", UiAssets.ICON_MULTI));
         }
         pairWidth = Math.max(pairWidth, requiredButtonWidth("Send", null));
         pairWidth = Math.max(pairWidth, requiredButtonWidth("Delay", null));

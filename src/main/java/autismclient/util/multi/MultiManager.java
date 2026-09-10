@@ -421,9 +421,6 @@ public final class MultiManager implements MultiSession.Sink {
     private StartResult validate(MultiProfile profile, java.util.UUID renderedProfileId) {
         if (profile.serverAddress.isBlank()) return StartResult.error("Server address is required");
         if (profile.sessions.isEmpty()) return StartResult.error("Select at least one account");
-        if (profile.sessions.size() > MultiProfile.MAX_SESSIONS) {
-            return StartResult.error("Maximum " + MultiProfile.MAX_SESSIONS + " sessions");
-        }
         boolean manual = profile.proxyMode == MultiProfile.ProxyMode.Manual;
         Set<String> accountIds = new HashSet<>();
         Set<String> identities = new HashSet<>();

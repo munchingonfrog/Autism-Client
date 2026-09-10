@@ -74,6 +74,13 @@ public final class AutismMultiScreen extends AutismScreen {
     private int profileScroll;
     private int accountScroll;
     private String lastActiveKey = "";
+    private boolean bulkSelectMode;
+    private boolean bulkSelectPatternMode;
+    private EditBox bulkPatternField;
+    private EditBox bulkRangeFromField;
+    private EditBox bulkRangeToField;
+    private boolean proxyDistributeMode;
+    private EditBox proxyPerAccountField;
 
     public AutismMultiScreen(Screen parent, String prefillServer) {
         this(parent, prefillServer, false);
@@ -155,7 +162,7 @@ public final class AutismMultiScreen extends AutismScreen {
         }
 
         if (custom) {
-            concurrencyField = field(ix, 92, half, "Accounts 1-500", Integer.toString(draft.customConcurrency), 4);
+            concurrencyField = field(ix, 92, half, "Concurrency", Integer.toString(draft.customConcurrency), 4);
             delayField = field(ix + half + 6, 92, innerW - half - 6, "Delay 0-5000ms", Integer.toString(draft.customDelayMs), 6);
         } else {
             concurrencyField = null;
@@ -171,6 +178,7 @@ public final class AutismMultiScreen extends AutismScreen {
         addStyled(ix, formY, innerW, 18, "Passwords (login)", Button.Tone.NORMAL, b -> openFormValues());
 
         if (!compactVertical()) addAccountFilterChips(ix, chipsY(), innerW);
+        if (!locked && !compactVertical()) addBulkSelectBar(ix, bulkSelectY(), innerW);
         }
 
         int footerY = screenHeight() - 32;
@@ -213,6 +221,7 @@ public final class AutismMultiScreen extends AutismScreen {
                 : "Set All Proxies: " + proxyLabel(commonProxy);
             addStyled(mix, accountsHeaderBaseY(), minnerW, 18, label, Button.Tone.PRIMARY,
                 button -> openManualProxyPicker("Proxy for all selected accounts", commonProxy, this::setAllProxies));
+            if (!locked) addProxyDistributeBar(mix, accountsHeaderBaseY() + 20, minnerW);
         }
 
         addProfileButtons();
@@ -264,6 +273,90 @@ public final class AutismMultiScreen extends AutismScreen {
             });
             filter.setToggled(typeFilters.contains(type));
             addRenderableWidget(filter);
+        }
+    }
+
+    private void addBulkSelectBar(int ix, int y, int innerW) {
+        if (bulkSelectPatternMode) {
+            bulkPatternField = field(ix, y, Math.max(1, innerW - 162), "Pattern e.g. bot* or *cracked", "", 48);
+            addStyled(ix + innerW - 156, y, 72, 18, "Select", Button.Tone.SUCCESS, b -> {
+                selectByPattern(bulkPatternField.getValue());
+                bulkSelectMode = false;
+                bulkSelectPatternMode = false;
+                rebuildControls();
+            });
+            addStyled(ix + innerW - 80, y, 76, 18, "Cancel", Button.Tone.NORMAL, b -> {
+                bulkSelectMode = false;
+                bulkSelectPatternMode = false;
+                rebuildControls();
+            });
+        } else if (bulkSelectMode) {
+            int fieldW = 40;
+            bulkRangeFromField = field(ix, y, fieldW, "From", "", 4);
+            bulkRangeToField = field(ix + fieldW + 8, y, fieldW, "To", "", 4);
+            addStyled(ix + fieldW * 2 + 16, y, 52, 18, "Go", Button.Tone.SUCCESS, b -> {
+                int from = parseInt(bulkRangeFromField.getValue(), 1);
+                int to = parseInt(bulkRangeToField.getValue(), 0);
+                if (from >= 1 && to >= from) selectByRange(from, to);
+                else toast("Invalid range", ERROR);
+                bulkSelectMode = false;
+                rebuildControls();
+            });
+            addStyled(ix + fieldW * 2 + 72, y, 32, 18, "X", Button.Tone.DANGER, b -> {
+                bulkSelectMode = false;
+                rebuildControls();
+            });
+        } else {
+            int gap = 3;
+            int count = 5;
+            int btnW = (innerW - gap * (count - 1)) / count;
+            int bx = ix;
+            addStyled(bx, y, btnW, 14, "All", Button.Tone.SUCCESS, b -> { selectAllFiltered(); rebuildControls(); });
+            bx += btnW + gap;
+            addStyled(bx, y, btnW, 14, "None", Button.Tone.DANGER, b -> { clearAllSessions(); rebuildControls(); });
+            bx += btnW + gap;
+            addStyled(bx, y, btnW, 14, "Invert", Button.Tone.NORMAL, b -> { invertSelection(); rebuildControls(); });
+            bx += btnW + gap;
+            addStyled(bx, y, btnW, 14, "Pattern", Button.Tone.NORMAL, b -> {
+                bulkSelectMode = true;
+                bulkSelectPatternMode = true;
+                rebuildControls();
+            });
+            bx += btnW + gap;
+            addStyled(bx, y, innerW - (bx - ix), 14, "Range", Button.Tone.NORMAL, b -> {
+                bulkSelectMode = true;
+                bulkSelectPatternMode = false;
+                rebuildControls();
+            });
+        }
+    }
+
+    private void addProxyDistributeBar(int ix, int y, int innerW) {
+        if (proxyDistributeMode) {
+            proxyPerAccountField = field(ix, y, Math.max(1, innerW - 162), "Accounts per proxy", "3", 4);
+            addStyled(ix + innerW - 156, y, 72, 18, "Apply", Button.Tone.SUCCESS, b -> {
+                int perProxy = parseInt(proxyPerAccountField.getValue(), 3);
+                distributeProxiesEvenly(Math.max(1, perProxy));
+                proxyDistributeMode = false;
+                rebuildControls();
+            });
+            addStyled(ix + innerW - 80, y, 76, 18, "Cancel", Button.Tone.NORMAL, b -> {
+                proxyDistributeMode = false;
+                rebuildControls();
+            });
+        } else {
+            int gap = 3;
+            int count = 3;
+            int btnW = (innerW - gap * (count - 1)) / count;
+            int bx = ix;
+            addStyled(bx, y, btnW, 14, "Distribute Evenly", Button.Tone.NORMAL, b -> {
+                proxyDistributeMode = true;
+                rebuildControls();
+            });
+            bx += btnW + gap;
+            addStyled(bx, y, btnW, 14, "1:1", Button.Tone.NORMAL, b -> { distributeOnePerProxy(); rebuildControls(); });
+            bx += btnW + gap;
+            addStyled(bx, y, innerW - (bx - ix), 14, "Random", Button.Tone.NORMAL, b -> { distributeRandomProxies(); rebuildControls(); });
         }
     }
 
@@ -508,10 +601,8 @@ public final class AutismMultiScreen extends AutismScreen {
         MultiProfile.SessionSpec existing = selectedSpec(accountId);
         if (existing != null) {
             draft.sessions.remove(existing);
-        } else if (draft.sessions.size() < MultiProfile.MAX_SESSIONS) {
-            draft.sessions.add(new MultiProfile.SessionSpec(accountId, ""));
         } else {
-            toast("Maximum " + MultiProfile.MAX_SESSIONS + " accounts.", ERROR);
+            draft.sessions.add(new MultiProfile.SessionSpec(accountId, ""));
         }
         commit();
         rebuildControls();
@@ -557,6 +648,152 @@ public final class AutismMultiScreen extends AutismScreen {
         commit();
         rebuildControls();
         toast("Set proxy on " + draft.sessions.size() + " account" + (draft.sessions.size() == 1 ? "" : "s") + ".", SUCCESS);
+    }
+
+    private void selectAllFiltered() {
+        if (isActiveProfile(draft.id)) return;
+        List<AccountChoice> choices = accountChoices();
+        for (AccountChoice choice : choices) {
+            if (choice.current()) continue;
+            if (selectedSpec(choice.id()) == null) {
+                draft.sessions.add(new MultiProfile.SessionSpec(choice.id(), ""));
+            }
+        }
+        commit();
+    }
+
+    private void clearAllSessions() {
+        if (isActiveProfile(draft.id)) return;
+        draft.sessions.clear();
+        commit();
+    }
+
+    private void invertSelection() {
+        if (isActiveProfile(draft.id)) return;
+        List<AccountChoice> choices = accountChoices();
+        Set<String> selectedIds = new HashSet<>();
+        for (MultiProfile.SessionSpec spec : draft.sessions) selectedIds.add(spec.accountId());
+        draft.sessions.clear();
+        for (AccountChoice choice : choices) {
+            if (choice.current()) continue;
+            if (!selectedIds.contains(choice.id())) {
+                draft.sessions.add(new MultiProfile.SessionSpec(choice.id(), ""));
+            }
+        }
+        commit();
+    }
+
+    private void selectByPattern(String glob) {
+        if (isActiveProfile(draft.id) || glob == null || glob.isBlank()) return;
+        String regex = globToRegex(glob.trim());
+        java.util.regex.Pattern pattern;
+        try {
+            pattern = java.util.regex.Pattern.compile(regex, java.util.regex.Pattern.CASE_INSENSITIVE);
+        } catch (Exception e) {
+            toast("Invalid pattern", ERROR);
+            return;
+        }
+        List<AccountChoice> choices = accountChoices();
+        int added = 0;
+        for (AccountChoice choice : choices) {
+            if (choice.current()) continue;
+            if (selectedSpec(choice.id()) != null) continue;
+            if (pattern.matcher(choice.label()).matches()) {
+                draft.sessions.add(new MultiProfile.SessionSpec(choice.id(), ""));
+                added++;
+            }
+        }
+        commit();
+        toast("Selected " + added + " account" + (added == 1 ? "" : "s") + ".", SUCCESS);
+    }
+
+    private void selectByRange(int from, int to) {
+        if (isActiveProfile(draft.id)) return;
+        List<AccountChoice> choices = accountChoices();
+        int start = Math.max(0, Math.min(from - 1, choices.size()));
+        int end = Math.min(choices.size(), to);
+        int added = 0;
+        for (int i = start; i < end; i++) {
+            AccountChoice choice = choices.get(i);
+            if (choice.current()) continue;
+            if (selectedSpec(choice.id()) == null) {
+                draft.sessions.add(new MultiProfile.SessionSpec(choice.id(), ""));
+                added++;
+            }
+        }
+        commit();
+        toast("Selected " + added + " account" + (added == 1 ? "" : "s") + ".", SUCCESS);
+    }
+
+    private void distributeProxiesEvenly(int accountsPerProxy) {
+        if (isActiveProfile(draft.id) || draft.sessions.isEmpty()) return;
+        List<AutismProxy> proxies = AutismProxyManager.get().all();
+        if (proxies.isEmpty()) {
+            toast("No proxies available", ERROR);
+            return;
+        }
+        if (accountsPerProxy < 1) accountsPerProxy = 1;
+        int assigned = 0;
+        int proxyIndex = 0;
+        for (int i = 0; i < draft.sessions.size(); i++) {
+            if (assigned >= accountsPerProxy) {
+                assigned = 0;
+                proxyIndex++;
+            }
+            MultiProfile.SessionSpec spec = draft.sessions.get(i);
+            String proxyId = proxyIndex < proxies.size() ? proxies.get(proxyIndex).stableId() : "";
+            draft.sessions.set(i, new MultiProfile.SessionSpec(spec.accountId(), proxyId, spec.macroName()));
+            assigned++;
+        }
+        commit();
+        int used = Math.min(proxies.size(), (draft.sessions.size() + accountsPerProxy - 1) / accountsPerProxy);
+        toast("Distributed " + used + " proxy" + (used == 1 ? "" : "s"), SUCCESS);
+    }
+
+    private void distributeOnePerProxy() {
+        if (isActiveProfile(draft.id) || draft.sessions.isEmpty()) return;
+        List<AutismProxy> proxies = AutismProxyManager.get().all();
+        if (proxies.isEmpty()) {
+            toast("No proxies available", ERROR);
+            return;
+        }
+        for (int i = 0; i < draft.sessions.size(); i++) {
+            MultiProfile.SessionSpec spec = draft.sessions.get(i);
+            String proxyId = proxies.get(i % proxies.size()).stableId();
+            draft.sessions.set(i, new MultiProfile.SessionSpec(spec.accountId(), proxyId, spec.macroName()));
+        }
+        commit();
+        toast("1 proxy per account", SUCCESS);
+    }
+
+    private void distributeRandomProxies() {
+        if (isActiveProfile(draft.id) || draft.sessions.isEmpty()) return;
+        List<AutismProxy> proxies = new ArrayList<>(AutismProxyManager.get().all());
+        if (proxies.isEmpty()) {
+            toast("No proxies available", ERROR);
+            return;
+        }
+        java.util.Collections.shuffle(proxies);
+        for (int i = 0; i < draft.sessions.size(); i++) {
+            MultiProfile.SessionSpec spec = draft.sessions.get(i);
+            String proxyId = proxies.get(i % proxies.size()).stableId();
+            draft.sessions.set(i, new MultiProfile.SessionSpec(spec.accountId(), proxyId, spec.macroName()));
+        }
+        commit();
+        toast("Random proxy distribution", SUCCESS);
+    }
+
+    private static String globToRegex(String glob) {
+        StringBuilder sb = new StringBuilder("^");
+        for (int i = 0; i < glob.length(); i++) {
+            char c = glob.charAt(i);
+            if (c == '*') sb.append(".*");
+            else if (c == '?') sb.append(".");
+            else if (".+^${}()|[]\\".indexOf(c) >= 0) sb.append('\\').append(c);
+            else sb.append(c);
+        }
+        sb.append("$");
+        return sb.toString();
     }
 
     private MultiProfile.SessionSpec selectedSpec(String accountId) {
@@ -757,8 +994,11 @@ public final class AutismMultiScreen extends AutismScreen {
     }
 
     private int accountsBaseY() {
-
-        return accountsHeaderBaseY() + (showBulkProxy() ? 22 : 0);
+        if (showBulkProxy()) {
+            boolean distributing = proxyDistributeMode;
+            return accountsHeaderBaseY() + (distributing ? 40 : 36);
+        }
+        return accountsHeaderBaseY();
     }
 
     private boolean showBulkProxy() {
@@ -769,8 +1009,12 @@ public final class AutismMultiScreen extends AutismScreen {
         return accountsBaseY() + 32;
     }
 
+    private int bulkSelectY() {
+        return chipsY() + 20;
+    }
+
     private int accountsTop() {
-        return accountsBaseY() + (compactVertical() ? 32 : 52);
+        return accountsBaseY() + (compactVertical() ? 52 : 72);
     }
 
     @Override

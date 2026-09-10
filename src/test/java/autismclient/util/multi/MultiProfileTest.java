@@ -42,11 +42,6 @@ class MultiProfileTest {
     }
 
     @Test
-    void sessionCapMatchesTheUiContract() {
-        assertEquals(500, MultiProfile.MAX_SESSIONS);
-    }
-
-    @Test
     void retryOnlyAcceptsTerminalSessions() {
         assertTrue(MultiManager.isRetryable(MultiSession.Status.FAILED));
         assertTrue(MultiManager.isRetryable(MultiSession.Status.DISCONNECTED));
@@ -97,14 +92,14 @@ class MultiProfileTest {
     }
 
     @Test
-    void normalizesDuplicateAccountsAndCapsSessions() {
+    void normalizesDuplicateAccounts() {
         MultiProfile profile = new MultiProfile();
-        for (int i = 0; i < MultiProfile.MAX_SESSIONS + 8; i++) {
+        for (int i = 0; i < 8; i++) {
             profile.sessions.add(new MultiProfile.SessionSpec("account-" + i, ""));
         }
         profile.sessions.add(new MultiProfile.SessionSpec("account-1", "proxy"));
         profile.normalize();
-        assertEquals(MultiProfile.MAX_SESSIONS, profile.sessions.size());
+        assertEquals(8, profile.sessions.size());
         assertEquals(1, profile.sessions.stream().filter(s -> s.accountId().equals("account-1")).count());
     }
 
@@ -314,7 +309,7 @@ class MultiProfileTest {
         assertEquals(8, profile.concurrency());
         assertEquals(100, profile.delayMs());
         profile.pacing = MultiProfile.Pacing.Immediate;
-        assertEquals(500, profile.concurrency());
+        assertEquals(Integer.MAX_VALUE, profile.concurrency());
         assertEquals(0, profile.delayMs());
     }
 

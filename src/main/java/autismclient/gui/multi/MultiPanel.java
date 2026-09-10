@@ -151,6 +151,14 @@ public final class MultiPanel {
     private String pendingProfileDelete = "";
     private String pendingMacroDelete = "";
 
+    private boolean bulkSelectMode;
+    private boolean bulkSelectPatternMode;
+    private final CompactTextInput bulkPatternInput = field("Pattern e.g. bot* or *cracked", 48);
+    private final CompactTextInput bulkRangeFromInput = field("From", 4);
+    private final CompactTextInput bulkRangeToInput = field("To", 4);
+    private boolean proxyDistributeMode;
+    private final CompactTextInput proxyPerAccountInput = field("Accounts/proxy", 4);
+
     private boolean assignPopupOpen;
     private final LinkedHashSet<String> assignSelected = new LinkedHashSet<>();
     private int assignScroll;
@@ -210,7 +218,7 @@ public final class MultiPanel {
     private List<MultiSession.Snapshot> frameSnapshots = List.of();
     private MultiProfile frameProfile;
     private int frameReadyCount;
-    private final Set<String> frameLiveIds = new java.util.HashSet<>(MultiProfile.MAX_SESSIONS * 2);
+    private final Set<String> frameLiveIds = new java.util.HashSet<>(128);
     private long cachedProfilesRevision = Long.MIN_VALUE;
     private List<MultiProfile> cachedProfiles = List.of();
     private long cachedActiveUiRevision = Long.MIN_VALUE;
@@ -480,6 +488,58 @@ public final class MultiPanel {
         }
         y += 20;
 
+        if (!active) {
+            if (bulkSelectPatternMode) {
+                int patW = Math.max(10, w - 120);
+                place(g, bulkPatternInput, x, y, patW);
+                button(g, x + patW + 4, y, 56, 16, "Select", success(), text(), mx, my, () -> {
+                    selectByPattern(bulkPatternInput.text());
+                    bulkSelectMode = false;
+                    bulkSelectPatternMode = false;
+                });
+                button(g, x + patW + 64, y, 52, 16, "Cancel", border(), text(), mx, my, () -> {
+                    bulkSelectMode = false;
+                    bulkSelectPatternMode = false;
+                });
+                y += 20;
+            } else if (bulkSelectMode) {
+                int fieldW = 40;
+                place(g, bulkRangeFromInput, x, y, fieldW);
+                draw(g, "-", x + fieldW + 4, y + 3, muted(), false, 8);
+                place(g, bulkRangeToInput, x + fieldW + 12, y, fieldW);
+                button(g, x + fieldW * 2 + 20, y, 56, 16, "Select", success(), text(), mx, my, () -> {
+                    int from = parseInt(bulkRangeFromInput.text(), 1);
+                    int to = parseInt(bulkRangeToInput.text(), 0);
+                    if (from >= 1 && to >= from) selectByRange(from, to);
+                    else status("Invalid range", DANGER_STOCK);
+                    bulkSelectMode = false;
+                });
+                button(g, x + fieldW * 2 + 80, y, 52, 16, "Cancel", border(), text(), mx, my, () -> bulkSelectMode = false);
+                y += 20;
+            } else {
+                int btnGap = 2;
+                int btnCount = 5;
+                int btnW = (w - btnGap * (btnCount - 1)) / btnCount;
+                int bx = x;
+                button(g, bx, y, btnW, 16, "All", success(), text(), mx, my, this::selectAllFiltered);
+                bx += btnW + btnGap;
+                button(g, bx, y, btnW, 16, "None", danger(), text(), mx, my, this::clearAllSessions);
+                bx += btnW + btnGap;
+                button(g, bx, y, btnW, 16, "Invert", border(), text(), mx, my, this::invertSelection);
+                bx += btnW + btnGap;
+                button(g, bx, y, btnW, 16, "Pattern", border(), text(), mx, my, () -> {
+                    bulkSelectMode = true;
+                    bulkSelectPatternMode = true;
+                });
+                bx += btnW + btnGap;
+                button(g, bx, y, x + w - bx, 16, "Range", border(), text(), mx, my, () -> {
+                    bulkSelectMode = true;
+                    bulkSelectPatternMode = false;
+                });
+                y += 20;
+            }
+        }
+
         if (!active && shownProfile.proxyMode == MultiProfile.ProxyMode.Manual) {
             String commonProxy = commonManualProxyId(shownProfile);
             Map<String, Integer> profileUsage = manualProxyUsage(shownProfile);
@@ -490,6 +550,28 @@ public final class MultiPanel {
                 () -> host.pickManualProxy("Proxy for all selected accounts", shownProfile.serverAddress,
                     commonProxy, profileUsage, this::setAllProxies));
             y += 20;
+            if (proxyDistributeMode) {
+                int inputW = Math.max(10, w - 120);
+                place(g, proxyPerAccountInput, x, y, inputW);
+                button(g, x + inputW + 4, y, 56, 16, "Apply", success(), text(), mx, my, () -> {
+                    int perProxy = parseInt(proxyPerAccountInput.text(), 3);
+                    distributeProxiesEvenly(Math.max(1, perProxy));
+                    proxyDistributeMode = false;
+                });
+                button(g, x + inputW + 64, y, 52, 16, "Cancel", border(), text(), mx, my, () -> proxyDistributeMode = false);
+                y += 20;
+            } else {
+                int btnGap = 2;
+                int btnCount = 3;
+                int btnW = (w - btnGap * (btnCount - 1)) / btnCount;
+                int px = x;
+                button(g, px, y, btnW, 16, "Distribute Evenly", border(), text(), mx, my, () -> proxyDistributeMode = true);
+                px += btnW + btnGap;
+                button(g, px, y, btnW, 16, "1:1", border(), text(), mx, my, this::distributeOnePerProxy);
+                px += btnW + btnGap;
+                button(g, px, y, x + w - px, 16, "Random", border(), text(), mx, my, this::distributeRandomProxies);
+                y += 20;
+            }
         }
         int listH = Math.max(20, contentBottom - y);
         accountViewport = new Viewport(x, y, w, listH);
@@ -1326,7 +1408,7 @@ public final class MultiPanel {
         }
         MultiProfile.SessionSpec spec = selectedSpec(id);
         if (spec != null) draft.sessions.remove(spec);
-        else if (draft.sessions.size() < MultiProfile.MAX_SESSIONS) draft.sessions.add(new MultiProfile.SessionSpec(id, ""));
+        else draft.sessions.add(new MultiProfile.SessionSpec(id, ""));
     }
 
     private void setAccountProxy(String accountId, String proxyId) {
@@ -1342,6 +1424,149 @@ public final class MultiPanel {
             MultiProfile.SessionSpec spec = draft.sessions.get(i);
             draft.sessions.set(i, new MultiProfile.SessionSpec(spec.accountId(), id, spec.macroName()));
         }
+    }
+
+    private void selectAllFiltered() {
+        if (draft == null || active()) return;
+        List<AccountChoice> choices = filteredAccounts(draft);
+        for (AccountChoice choice : choices) {
+            if (choice.current()) continue;
+            if (selectedSpec(choice.id()) == null) {
+                draft.sessions.add(new MultiProfile.SessionSpec(choice.id(), ""));
+            }
+        }
+    }
+
+    private void clearAllSessions() {
+        if (draft == null || active()) return;
+        draft.sessions.clear();
+    }
+
+    private void invertSelection() {
+        if (draft == null || active()) return;
+        List<AccountChoice> choices = filteredAccounts(draft);
+        java.util.Set<String> currentIds = new java.util.HashSet<>();
+        for (AccountChoice choice : choices) currentIds.add(choice.id());
+        java.util.Set<String> selectedIds = new java.util.HashSet<>();
+        for (MultiProfile.SessionSpec spec : draft.sessions) selectedIds.add(spec.accountId());
+        draft.sessions.clear();
+        for (AccountChoice choice : choices) {
+            if (choice.current()) continue;
+            boolean wasSelected = selectedIds.contains(choice.id());
+            if (!wasSelected) draft.sessions.add(new MultiProfile.SessionSpec(choice.id(), ""));
+        }
+    }
+
+    private void selectByPattern(String glob) {
+        if (draft == null || active() || glob == null || glob.isBlank()) return;
+        String regex = globToRegex(glob.trim());
+        java.util.regex.Pattern pattern;
+        try {
+            pattern = java.util.regex.Pattern.compile(regex, java.util.regex.Pattern.CASE_INSENSITIVE);
+        } catch (Exception e) {
+            status("Invalid pattern", DANGER_STOCK);
+            return;
+        }
+        List<AccountChoice> choices = filteredAccounts(draft);
+        int added = 0;
+        for (AccountChoice choice : choices) {
+            if (choice.current()) continue;
+            if (selectedSpec(choice.id()) != null) continue;
+            if (pattern.matcher(choice.label()).matches()) {
+                draft.sessions.add(new MultiProfile.SessionSpec(choice.id(), ""));
+                added++;
+            }
+        }
+        status("Selected " + added + " account" + (added == 1 ? "" : "s"), SUCCESS_STOCK);
+    }
+
+    private void selectByRange(int from, int to) {
+        if (draft == null || active()) return;
+        List<AccountChoice> choices = filteredAccounts(draft);
+        int start = Math.max(0, Math.min(from - 1, choices.size()));
+        int end = Math.min(choices.size(), to);
+        int added = 0;
+        for (int i = start; i < end; i++) {
+            AccountChoice choice = choices.get(i);
+            if (choice.current()) continue;
+            if (selectedSpec(choice.id()) == null) {
+                draft.sessions.add(new MultiProfile.SessionSpec(choice.id(), ""));
+                added++;
+            }
+        }
+        status("Selected " + added + " account" + (added == 1 ? "" : "s"), SUCCESS_STOCK);
+    }
+
+    private void distributeProxiesEvenly(int accountsPerProxy) {
+        if (draft == null || active() || draft.sessions.isEmpty()) return;
+        java.util.List<AutismProxy> proxies = AutismProxyManager.get().all();
+        if (proxies.isEmpty()) {
+            status("No proxies available", DANGER_STOCK);
+            return;
+        }
+        if (accountsPerProxy < 1) accountsPerProxy = 1;
+        int assigned = 0;
+        int proxyIndex = 0;
+        for (int i = 0; i < draft.sessions.size(); i++) {
+            if (assigned >= accountsPerProxy) {
+                assigned = 0;
+                proxyIndex++;
+            }
+            MultiProfile.SessionSpec spec = draft.sessions.get(i);
+            String proxyId = proxyIndex < proxies.size() ? proxies.get(proxyIndex).stableId() : "";
+            draft.sessions.set(i, new MultiProfile.SessionSpec(spec.accountId(), proxyId, spec.macroName()));
+            assigned++;
+        }
+        int used = Math.min(proxies.size(), (draft.sessions.size() + accountsPerProxy - 1) / accountsPerProxy);
+        status("Distributed " + used + " proxy" + (used == 1 ? "" : "s") + " across " + draft.sessions.size() + " accounts", SUCCESS_STOCK);
+    }
+
+    private void distributeOnePerProxy() {
+        if (draft == null || active() || draft.sessions.isEmpty()) return;
+        java.util.List<AutismProxy> proxies = AutismProxyManager.get().all();
+        if (proxies.isEmpty()) {
+            status("No proxies available", DANGER_STOCK);
+            return;
+        }
+        for (int i = 0; i < draft.sessions.size(); i++) {
+            MultiProfile.SessionSpec spec = draft.sessions.get(i);
+            String proxyId = proxies.get(i % proxies.size()).stableId();
+            draft.sessions.set(i, new MultiProfile.SessionSpec(spec.accountId(), proxyId, spec.macroName()));
+        }
+        status("1 proxy per account (" + proxies.size() + " proxies, " + draft.sessions.size() + " accounts)", SUCCESS_STOCK);
+    }
+
+    private void distributeRandomProxies() {
+        if (draft == null || active() || draft.sessions.isEmpty()) return;
+        java.util.List<AutismProxy> proxies = new java.util.ArrayList<>(AutismProxyManager.get().all());
+        if (proxies.isEmpty()) {
+            status("No proxies available", DANGER_STOCK);
+            return;
+        }
+        java.util.Collections.shuffle(proxies);
+        for (int i = 0; i < draft.sessions.size(); i++) {
+            MultiProfile.SessionSpec spec = draft.sessions.get(i);
+            String proxyId = proxies.get(i % proxies.size()).stableId();
+            draft.sessions.set(i, new MultiProfile.SessionSpec(spec.accountId(), proxyId, spec.macroName()));
+        }
+        status("Random proxy distribution (" + proxies.size() + " proxies)", SUCCESS_STOCK);
+    }
+
+    private static String globToRegex(String glob) {
+        StringBuilder sb = new StringBuilder("^");
+        for (int i = 0; i < glob.length(); i++) {
+            char c = glob.charAt(i);
+            if (c == '*') sb.append(".*");
+            else if (c == '?') sb.append(".");
+            else if (".+^${}()|[]\\".indexOf(c) >= 0) sb.append('\\').append(c);
+            else sb.append(c);
+        }
+        sb.append("$");
+        return sb.toString();
+    }
+
+    private boolean active() {
+        return MultiManager.get().isActive();
     }
 
     private void selectSession(String id) {

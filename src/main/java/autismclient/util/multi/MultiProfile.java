@@ -17,7 +17,6 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class MultiProfile {
-    public static final int MAX_SESSIONS = 500;
     public static final String DEFAULT_ACCOUNT_ID = "default";
     public static final String BEST_PROXY_ID = "best";
     public static final int QUICK_ACTIONS = 4;
@@ -26,7 +25,7 @@ public final class MultiProfile {
         Gentle(1, 1000),
         Balanced(4, 250),
         Fast(8, 100),
-        Immediate(MAX_SESSIONS, 0),
+        Immediate(Integer.MAX_VALUE, 0),
         Custom(4, 250);
 
         private final int concurrency;
@@ -149,7 +148,7 @@ public final class MultiProfile {
         if (pacing == null) pacing = Pacing.Balanced;
         if (proxyMode == null) proxyMode = ProxyMode.Off;
         allMacroName = allMacroName == null ? "" : allMacroName.trim();
-        customConcurrency = Math.max(1, Math.min(MAX_SESSIONS, customConcurrency));
+        customConcurrency = Math.max(1, customConcurrency);
         customDelayMs = Math.max(0, Math.min(5000, customDelayMs));
         autoMaxPingMs = Math.max(50, Math.min(1000, autoMaxPingMs));
         if (packetPolicy == null) packetPolicy = new MultiPacketPolicy();
@@ -158,7 +157,6 @@ public final class MultiProfile {
         normalizeQuickActions();
         Set<String> accounts = new HashSet<>();
         sessions.removeIf(spec -> spec == null || spec.accountId().isBlank() || !accounts.add(spec.accountId()));
-        while (sessions.size() > MAX_SESSIONS) sessions.remove(sessions.size() - 1);
         sealedFormValues.keySet().removeIf(account -> !accounts.contains(account));
         sealedFormValues.values().forEach(values -> values.entrySet().removeIf(entry ->
             normalizeSecretName(entry.getKey()).isEmpty() || entry.getValue() == null || entry.getValue().isBlank()));
